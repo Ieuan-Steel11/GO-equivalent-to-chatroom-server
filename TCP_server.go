@@ -4,31 +4,34 @@ import (
   "net"
   "math/rand"
   "time"
+  "bufio"
   b64 "encoding/base64"
-  log "github.com/sirupsen/logrus"
+  "log"
 )
 
-type server struct{
+type server struct{            
   clients []net.Conn
   key []byte
   listener net.Listener
 }
 
 func (server *server) handle_clients(sender_conn net.Conn) {
-  var buffer [1024]byte
+  for {
+    reader := bufio.NewReader(sender_conn)
 
-  _, err := sender_conn.Read(buffer[0:])
-  error_handler(err)
-  // gets message
-
-  server.broadcast(sender_conn, buffer)
-  // sends message
+    message, err := reader.ReadString('\n')
+    error_handler(err)
+    // gets message
+  
+    server.broadcast(sender_conn, message)
+    // sends message
+  }
 }
 
-func (server *server) broadcast(sender net.Conn, buffer [1024]byte) {
+func (server *server) broadcast(sender net.Conn, message string) {
   for _, client := range server.clients {
     if client != sender {
-      _, err := client.Write(buffer[0:])
+      _, err := client.Write([]byte(message))
 
       if err != nil {
         log.Debug(err)
@@ -40,22 +43,19 @@ func (server *server) broadcast(sender net.Conn, buffer [1024]byte) {
 
 func (server *server) get_new_clients() net.Conn {
 
-  var buffer [1024]byte
-  // var to store messages
-
   new_client, err := server.listener.Accept()
   error_handler(err)
 
-  server.clients = append(server.clients, new_client)
+  if new_client != nil {
+    server.clients = append(server.clients, new_client)
+    // adds clien to list
 
-  _, err2 := new_client.Write(server.key)
-  error_handler(err2)
-
-  _, err3 := new_client.Read(buffer[0:])
-  error_handler(err3)
-
-  log.Info("Serving: ", new_client.RemoteAddr())
-
+    _, err2 := new_client.Write(server.key)
+    error_handler(err2)
+    // sends encryption key
+  
+    log.Println("Serving: ", new_client.RemoteAddr())
+  }
   return new_client
 }
 
@@ -83,7 +83,9 @@ func main() {
 
   for {
     client := server.get_new_clients()
-    go server.handle_clients(client)
+    if client != nil {
+      go server.handle_clients(client)
+    }
   }
   server.shutdown()
 }
@@ -98,7 +100,7 @@ func gen_byte_string(length int) []byte {
   b := make([]byte, length)
 
   var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
-  const charset = "abcdefghijklmnopqrstuvwxyz" +"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+  const charset = "abcdefghijklmnopqrstuvwxyz" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
   for i := range b {
     b[i] = charset[seededRand.Intn(len(charset))]
